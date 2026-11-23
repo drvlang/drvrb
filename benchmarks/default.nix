@@ -11,7 +11,10 @@ in pkgs.runCommand "drvrb-ruby-bench-graphql" {} ''
   export HOME="$TMPDIR" HARNESS=once RESULT_JSON_PATH="$TMPDIR/trial.json"
   export PATH="${env}/bin:$PATH"
   ruby -rracc/cparse -e 'abort unless $LOADED_FEATURES.grep(%r{racc/cparse\.(so|bundle)$}).any?'
-  ruby ${project}/benchmark.rb
-  test -s "$RESULT_JSON_PATH"
+  # The harness uses Fiddle to read process memory on Darwin. Its own bundled
+  # gem is supplied by Ruby, outside the GraphQL workload's locked gems.
+  fiddle=$(${pkgs.ruby_4_0}/bin/ruby -rrubygems -e 'puts Gem::Specification.find_by_name("fiddle").full_require_paths.join(File::PATH_SEPARATOR)')
+  ruby -I "$fiddle" ${project}/benchmark.rb
+  ruby -rjson -e 'trial = JSON.parse(File.read(ARGV.fetch(0))); abort unless trial.fetch("rss").positive? && trial.fetch("maxrss").positive?' "$RESULT_JSON_PATH"
   ruby -rgraphql -e 'doc = GraphQL.parse(File.read(ARGV.first)); abort if doc.definitions.empty?; puts doc.definitions.size' ${project}/negotiate.gql > "$out"
 ''
