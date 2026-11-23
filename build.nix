@@ -45,22 +45,24 @@ let
     passthru.runtimeDeps = closure;
   };
   gems = lib.mapAttrs gem plan.gems;
-  folder = (pkgs.buildEnv {
+  cacheable = drv: drv.overrideAttrs { __contentAddressed = true; allowSubstitutes = true; };
+  # buildEnv generates its Perl builder with a local-only text substitution.
+  # Publish that helper too so a fresh runner can resolve the folder's recipe.
+  buildEnv = pkgs.buildEnv.override { replaceVars = file: vars: cacheable (pkgs.replaceVars file vars); };
+  folder = cacheable (buildEnv {
     name = "drvrb-gem-home";
     paths = builtins.attrValues gems;
     pathsToLink = [ "/gems" "/specifications" "/extensions" "/cache" "/plugins" "/build_info" "/bin" ];
-  }).overrideAttrs { __contentAddressed = true; };
+  });
   bundle = if gems ? bundler then "${gems.bundler}/bin/bundle" else "${ruby}/bin/bundle";
   bundlerVersion = if gems ? bundler then plan.gems.bundler.version else "system";
   # Bundler uses the checkout as the load path of a path gem. Its extension
   # was compiled inside the gem derivation, away from that read-only checkout.
   localExtensions = lib.concatStringsSep ":" (lib.mapAttrsToList
     (name: spec: "${gems.${name}}/${spec.extensions}") (lib.filterAttrs (_: spec: spec ? extensions) plan.gems));
-  manifest = (pkgs.writeText "drvrb-gem-paths.json" (builtins.toJSON (lib.mapAttrs (_: toString) gems))).overrideAttrs {
-    __contentAddressed = true;
-  };
+  manifest = cacheable (pkgs.writeText "drvrb-gem-paths.json" (builtins.toJSON (lib.mapAttrs (_: toString) gems)));
   suffix = rel: lib.escapeShellArg (lib.optionalString (rel != ".") "/${rel}");
-in (pkgs.writeText "drvrb-locked-gems" ''
+in cacheable (pkgs.writeText "drvrb-locked-gems" ''
   export GEM_HOME=${folder} GEM_PATH=${folder}
   export BUNDLE_IGNORE_CONFIG=1 BUNDLE_FROZEN=true BUNDLE_VERSION=${lib.escapeShellArg bundlerVersion}
   extensions=${lib.escapeShellArg localExtensions}
@@ -68,4 +70,4 @@ in (pkgs.writeText "drvrb-locked-gems" ''
   manifest=${manifest}
   rootSuffix=${suffix plan.root}
   memberSuffix=${suffix plan.member}
-'').overrideAttrs { __contentAddressed = true; }
+'')
