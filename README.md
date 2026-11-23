@@ -14,7 +14,7 @@ nix run github:drvlang/drvrb -- test -C ./app
 nix run github:drvlang/drvrb -- run -C ./app -- 'two words'
 ```
 
-The result contains the usual `gems/`, `specifications/`, `extensions/`, and `bin/` directories. Its Ruby and Bundler wrappers use the assembled folder. `nix-support/gem-paths.json` maps gem names to their individual store outputs. To share those build outputs, upload the result and its closure to your binary cache.
+The result contains the usual `gems/`, `specifications/`, `extensions/`, and `bin/` directories. Its Ruby and Bundler wrappers use the assembled folder. `nix-support/gem-paths.json` maps gem names to their individual store outputs. Installed gems, the assembled folder, and tests use floating content addresses by default. If a new recipe installs identical files and store references, its consumers can reuse the original gem. Publish the build and its trace with `nix copy --to "$cache" .#hello` for a flake target named `hello`.
 
 When exactly one project executable is present under `exe/` or `bin/`, `run` selects it. Otherwise it runs Ruby. Select an executable explicitly with `--options '{"program":"rake"}'`. Tests use a project's Rake test task, RSpec, or Ruby test files. Set a different command with, for example, `--options '{"testCommand":["rake","spec"]}'`. Arguments after `--` go to the program or test runner.
 

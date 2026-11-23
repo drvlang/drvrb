@@ -7,7 +7,7 @@ let
   };
   project = upstream.outPath + "/benchmarks/graphql";
   env = self.lib.mkPackage { inherit system; src = project; };
-in pkgs.runCommand "drvrb-ruby-bench-graphql" {} ''
+in pkgs.runCommand "drvrb-ruby-bench-graphql" { __contentAddressed = true; } ''
   export HOME="$TMPDIR" HARNESS=once RESULT_JSON_PATH="$TMPDIR/trial.json"
   export PATH="${env}/bin:$PATH"
   ruby -rracc/cparse -e 'abort unless $LOADED_FEATURES.grep(%r{racc/cparse\.(so|bundle)$}).any?'

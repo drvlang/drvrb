@@ -16,6 +16,7 @@ let
       name = "source-${name}";
     };
   in pkgs.stdenv.mkDerivation {
+    __contentAddressed = true;
     pname = "drvrb-${name}";
     inherit (spec) version;
     dontUnpack = true;
@@ -44,11 +45,11 @@ let
     passthru.runtimeDeps = closure;
   };
   gems = lib.mapAttrs gem plan.gems;
-  folder = pkgs.buildEnv {
+  folder = (pkgs.buildEnv {
     name = "drvrb-gem-home";
     paths = builtins.attrValues gems;
     pathsToLink = [ "/gems" "/specifications" "/extensions" "/cache" "/plugins" "/build_info" "/bin" ];
-  };
+  }).overrideAttrs { __contentAddressed = true; };
   bundle = if gems ? bundler then "${gems.bundler}/bin/bundle" else "${ruby}/bin/bundle";
   bundlerVersion = if gems ? bundler then plan.gems.bundler.version else "system";
   # Bundler uses the checkout as the load path of a path gem. Its extension
@@ -62,12 +63,18 @@ let
   '';
   root = projectPath plan.root;
   member = projectPath plan.member;
-  package = pkgs.runCommand "drvrb-environment" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
+  manifest = (pkgs.writeText "drvrb-gem-paths.json" (builtins.toJSON (lib.mapAttrs (_: toString) gems))).overrideAttrs {
+    __contentAddressed = true;
+  };
+  package = pkgs.runCommand "drvrb-environment" {
+    __contentAddressed = true;
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+  } ''
     mkdir -p "$out/bin" "$out/nix-support"
     for dir in gems specifications extensions cache plugins build_info; do
       if [[ -e ${folder}/$dir ]]; then ln -s "${folder}/$dir" "$out/$dir"; else mkdir "$out/$dir"; fi
     done
-    ln -s ${pkgs.writeText "drvrb-gem-paths.json" (builtins.toJSON (lib.mapAttrs (_: toString) gems))} "$out/nix-support/gem-paths.json"
+    ln -s ${manifest} "$out/nix-support/gem-paths.json"
     settings=(--set GEM_HOME "${folder}" --set GEM_PATH "${folder}" --set BUNDLE_GEMFILE ${lib.escapeShellArg "${root}/Gemfile"}
       --set BUNDLE_IGNORE_CONFIG 1 --set BUNDLE_FROZEN true --set BUNDLE_VERSION ${lib.escapeShellArg bundlerVersion}
       --prefix PATH : "${ruby}/bin:${folder}/bin")
@@ -96,7 +103,7 @@ let
     fi
     "$out/bin/bundle" check
   '';
-in if !test then package else pkgs.runCommand "drvrb-tests" {} ''
+in if !test then package else pkgs.runCommand "drvrb-tests" { __contentAddressed = true; } ''
   export HOME="$TMPDIR"
   ${gemEnv}
   cp -R ${src} workspace

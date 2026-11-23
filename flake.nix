@@ -23,7 +23,7 @@
           root = ./tests/platforms;
           files = [ ./tests/platforms/Gemfile ./tests/platforms/Gemfile.lock ];
         };
-      }; in args.pkgs.runCommand "drvrb-native-platform" {} ''
+      }; in args.pkgs.runCommand "drvrb-native-platform" { __contentAddressed = true; } ''
         ${env}/bin/ruby -rffi -e 'abort if Gem.loaded_specs.fetch("ffi").platform == "ruby"; puts FFI::MemoryPointer.new(:int).write_int(42).read_int' > "$out"
         grep -qx 42 "$out"
       '';

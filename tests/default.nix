@@ -7,7 +7,10 @@ let
     files = [ ./workspace/Gemfile ./workspace/Gemfile.lock ./workspace/pkg/greeting (root + "/${target}") ];
   };
   ws = self.lib.mkMonorepoFlake { inherit srcForTarget commands; };
-in pkgs.runCommand "drvrb-workspace" { tests = builtins.attrValues ws.checks.${system}; } ''
+in pkgs.runCommand "drvrb-workspace" {
+  __contentAddressed = true;
+  tests = builtins.attrValues ws.checks.${system};
+} ''
   test "$(${ws.apps.${system}.hello.program} 'Ruby gems')" = 'hello: hello Ruby gems'
   test "$(${ws.apps.${system}.worker.program} 'Ruby gems')" = 'worker: hello Ruby gems'
   touch "$out"

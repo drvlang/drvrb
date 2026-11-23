@@ -43,12 +43,18 @@ GEM_HOME="$before" GEM_PATH="$before" "$before/bin/ruby" -rgreeting -e 'abort un
 [[ -f "$before/specifications/greeting-1.0.0.gemspec" && -d "$before/gems/base64-0.3.0" ]]
 manifest=nix-support/gem-paths.json
 gem_path() { jq -er --arg name "$2" '.[$name]' "$1/$manifest"; }
-# The installed local gem's recipe depends on its locked dependency's recipe.
-base_drv=$(nix-store -q --deriver "$(gem_path "$before" base64)")
+# On realization Nix resolves the local gem's dependency to its CA store path.
 greeting_drv=$(nix-store -q --deriver "$(gem_path "$before" greeting)")
-nix-store -q --references "$greeting_drv" | grep -Fx "$base_drv"
-echo '# new local gem source' >> pkg/greeting/lib/greeting.rb
+nix-store -q --references "$greeting_drv" | grep -Fx "$(gem_path "$before" base64)"
+nix path-info --json "$before" "$(realpath "$before")" "$(gem_path "$before" greeting)" "$(gem_path "$before" base64)" |
+  jq -e 'all(.[]; .ca | startswith("fixed:r:sha256:"))'
+# A pure-Ruby gem ignores this extra build tool. Its installed gem, native
+# dependent and public GEM_HOME should all resolve to the previous outputs.
+equivalent=$("$cli" build -C . hello --no-link --options '{"gemInputs":{"base64":["pkg-config"]}}')
+[[ "$equivalent" == "$before" ]]
+echo 'def Greeting.revision = 2' >> pkg/greeting/lib/greeting.rb
 after=$("$cli" build -C . hello --no-link)
+[[ $("$after/bin/ruby" -rgreeting -e 'puts Greeting.revision') == 2 ]]
 [[ $(gem_path "$before" greeting) != "$(gem_path "$after" greeting)" ]]
 [[ $(gem_path "$before" base64) == "$(gem_path "$after" base64)" ]]
 # Change only the native Gemfile and lock to select a new version of minitest.
