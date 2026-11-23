@@ -26,6 +26,8 @@ This release supports public HTTPS gem registries, ordinary precompiled platform
 
 ## Flakes and monorepos
 
+The package and its test jobs share one Bundler plan and installed gem environment. You can pass different arguments after `drvrb test --` in separate CI jobs. Each runs its own tests and can reuse the same locked gems and plan from the binary cache.
+
 A single project can expose packages, checks, and an app:
 
 ```nix

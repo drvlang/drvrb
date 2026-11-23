@@ -1,4 +1,4 @@
-pkgs: { src, plan, gemInputs, gemFlags, test, testCommand, testArgs, testRunner }:
+pkgs: { src, plan, gemInputs, gemFlags }:
 let
   inherit (pkgs) lib;
   ruby = pkgs.ruby_4_0;
@@ -56,66 +56,16 @@ let
   # was compiled inside the gem derivation, away from that read-only checkout.
   localExtensions = lib.concatStringsSep ":" (lib.mapAttrsToList
     (name: spec: "${gems.${name}}/${spec.extensions}") (lib.filterAttrs (_: spec: spec ? extensions) plan.gems));
-  gemEnv = ''
-    export GEM_HOME=${folder} GEM_PATH=${folder}
-    export BUNDLE_IGNORE_CONFIG=1 BUNDLE_FROZEN=true BUNDLE_VERSION=${lib.escapeShellArg bundlerVersion}
-    ${lib.optionalString (localExtensions != "") ''export RUBYLIB=${lib.escapeShellArg localExtensions}''}
-  '';
-  root = projectPath plan.root;
-  member = projectPath plan.member;
   manifest = (pkgs.writeText "drvrb-gem-paths.json" (builtins.toJSON (lib.mapAttrs (_: toString) gems))).overrideAttrs {
     __contentAddressed = true;
   };
-  package = pkgs.runCommand "drvrb-environment" {
-    __contentAddressed = true;
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-  } ''
-    mkdir -p "$out/bin" "$out/nix-support"
-    for dir in gems specifications extensions cache plugins build_info; do
-      if [[ -e ${folder}/$dir ]]; then ln -s "${folder}/$dir" "$out/$dir"; else mkdir "$out/$dir"; fi
-    done
-    ln -s ${manifest} "$out/nix-support/gem-paths.json"
-    settings=(--set GEM_HOME "${folder}" --set GEM_PATH "${folder}" --set BUNDLE_GEMFILE ${lib.escapeShellArg "${root}/Gemfile"}
-      --set BUNDLE_IGNORE_CONFIG 1 --set BUNDLE_FROZEN true --set BUNDLE_VERSION ${lib.escapeShellArg bundlerVersion}
-      --prefix PATH : "${ruby}/bin:${folder}/bin")
-    ${lib.optionalString (localExtensions != "") ''settings+=(--prefix RUBYLIB : ${lib.escapeShellArg localExtensions})''}
-    makeWrapper "${ruby}/bin/ruby" "$out/bin/ruby" "''${settings[@]}" --add-flags '-rbundler/setup'
-    makeWrapper "${ruby}/bin/gem" "$out/bin/gem" "''${settings[@]}"
-    makeWrapper ${bundle} "$out/bin/bundle" "''${settings[@]}"
-    shopt -s nullglob
-    for entry in ${folder}/bin/*; do
-      name=''${entry##*/}
-      [[ -e "$out/bin/$name" ]] || makeWrapper ${bundle} "$out/bin/$name" "''${settings[@]}" --add-flag exec --add-flag "$entry"
-    done
-    programs=()
-    for entry in ${lib.escapeShellArg (toString member)}/{exe,bin}/*; do
-      [[ -f "$entry" && -x "$entry" ]] || continue
-      name=''${entry##*/}
-      if [[ "$name" == bundle || "$name" == ruby || "$name" == gem ]]; then continue; fi
-      rm -f "$out/bin/$name"
-      makeWrapper ${bundle} "$out/bin/$name" "''${settings[@]}" --add-flag exec --add-flag "$entry"
-      programs+=("$name")
-    done
-    if [[ ''${#programs[@]} == 1 ]]; then
-      ln -s "../bin/''${programs[0]}" "$out/nix-support/drvrb-run"
-    else
-      ln -s ../bin/ruby "$out/nix-support/drvrb-run"
-    fi
-    "$out/bin/bundle" check
-  '';
-in if !test then package else pkgs.runCommand "drvrb-tests" { __contentAddressed = true; } ''
-  export HOME="$TMPDIR"
-  ${gemEnv}
-  cp -R ${src} workspace
-  chmod -R u+w workspace
-  export BUNDLE_GEMFILE="$PWD/workspace/"${lib.escapeShellArg "${plan.root}/Gemfile"}
-  export PATH="${folder}/bin:${ruby}/bin:$PATH"
-  cd "workspace/"${lib.escapeShellArg plan.member}
-  ${bundle} check
-  ${if testCommand == null then ''
-    ${bundle} exec ${ruby}/bin/ruby ${testRunner} ${lib.escapeShellArgs testArgs}
-  '' else ''
-    ${bundle} exec ${lib.escapeShellArgs (testCommand ++ testArgs)}
-  ''}
-  mkdir "$out"
-''
+  suffix = rel: lib.escapeShellArg (lib.optionalString (rel != ".") "/${rel}");
+in (pkgs.writeText "drvrb-locked-gems" ''
+  export GEM_HOME=${folder} GEM_PATH=${folder}
+  export BUNDLE_IGNORE_CONFIG=1 BUNDLE_FROZEN=true BUNDLE_VERSION=${lib.escapeShellArg bundlerVersion}
+  extensions=${lib.escapeShellArg localExtensions}
+  bundle=${lib.escapeShellArg bundle}
+  manifest=${manifest}
+  rootSuffix=${suffix plan.root}
+  memberSuffix=${suffix plan.member}
+'').overrideAttrs { __contentAddressed = true; }

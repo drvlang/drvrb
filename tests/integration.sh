@@ -22,6 +22,8 @@ cat > flake.nix <<NIX
 }
 NIX
 nix flake lock
+[[ $(nix eval --raw "path:$PWD#packages.$system.hello.planner.drvPath") == \
+   "$(nix eval --raw "path:$PWD#checks.$system.hello.planner.drvPath")" ]]
 for kind in packages checks; do
   path_of() { nix eval --raw "path:$PWD#$kind.$system.$1.drvPath"; }
   hello=$(path_of hello)
