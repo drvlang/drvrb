@@ -1,0 +1,1 @@
+{ "commands": { "hello": "cmd/hello", "worker": "cmd/worker" } }
