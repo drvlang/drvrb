@@ -4,6 +4,11 @@
   inputs.drvkit = { url = "github:drvlang/drvkit"; flake = false; };
   outputs = { self, nixpkgs, drvkit }: import drvkit {
     inherit self nixpkgs;
+    toolSource = {
+      root = ./.;
+      files = [ ./build.nix ./package.nix ./plan.rb ./run-tests.rb ];
+      benchmarkFiles = [ ./benchmarks/default.nix ];
+    };
     name = "drvrb";
     systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
     mkPackage = import ./package.nix { inherit drvkit nixpkgs; };
