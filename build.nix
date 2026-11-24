@@ -10,7 +10,7 @@ let
     archive = if local then null else pkgs.fetchurl {
       name = "${spec.full}.gem"; inherit (spec) url sha256;
     };
-    localSrc = if !local then null else builtins.path {
+    localSrc = if !local then null else if spec.path == "." then src else builtins.path {
       # Copy this member on its own so a sibling edit preserves the gem's recipe.
       path = /. + builtins.unsafeDiscardStringContext (toString (projectPath spec.path));
       name = "source-${name}";
