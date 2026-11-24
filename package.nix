@@ -1,7 +1,8 @@
-{ drvkit, test ? false }:
+{ drvkit, nixpkgs ? null, test ? false }:
 pkgs: { src, memberPath ? ".", gemInputs ? {}, gemFlags ? {}, testCommand ? null, testArgs ? [] }:
 let
   inherit (pkgs) lib;
+  nixpkgsSource = import (drvkit + "/nixpkgs-source.nix") pkgs nixpkgs;
   ruby = pkgs.ruby_4_0;
   dynamic = import (drvkit + "/dynamic.nix") { inherit pkgs; };
   json = value: "builtins.fromJSON ${lib.strings.escapeNixString (builtins.toJSON value)}";
@@ -12,7 +13,7 @@ let
       ${ruby}/bin/ruby ${./plan.rb} ${lib.escapeShellArg (toString src)} ${lib.escapeShellArg memberPath} > plan.json
     '';
     expression = ''
-      let pkgs = import ${pkgs.path} { system = "${pkgs.stdenv.hostPlatform.system}"; };
+      let pkgs = import ${nixpkgsSource} { system = "${pkgs.stdenv.hostPlatform.system}"; };
       in import ${./build.nix} pkgs {
         src = builtins.storePath "${src}";
         plan = builtins.fromJSON (builtins.readFile ./plan.json);

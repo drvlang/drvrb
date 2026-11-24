@@ -6,8 +6,8 @@
     inherit self nixpkgs;
     name = "drvrb";
     systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
-    mkPackage = import ./package.nix { inherit drvkit; };
-    mkTest = import ./package.nix { inherit drvkit; test = true; };
+    mkPackage = import ./package.nix { inherit drvkit nixpkgs; };
+    mkTest = import ./package.nix { inherit drvkit nixpkgs; test = true; };
     selectTarget = { src, target, ... }: { inherit src; memberPath = target; };
     mkApp = pkgs: args: pkg:
       let program = args.program or null;
