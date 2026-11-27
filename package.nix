@@ -1,76 +1,57 @@
-{ drvkit, nixpkgs ? null, test ? false }:
+{ test ? false }:
 pkgs: { src, memberPath ? ".", gemInputs ? {}, gemFlags ? {}, testCommand ? null, testArgs ? [] }:
 let
   inherit (pkgs) lib;
-  nixpkgsSource = import (drvkit + "/nixpkgs-source.nix") pkgs nixpkgs;
   ruby = pkgs.ruby_4_0;
-  dynamic = import (drvkit + "/dynamic.nix") { inherit pkgs; };
-  json = value: "builtins.fromJSON ${lib.strings.escapeNixString (builtins.toJSON value)}";
-  environment = dynamic {
-    name = "drvrb-gems";
-    prepare = ''
-      export HOME="$TMPDIR" BUNDLE_IGNORE_CONFIG=1 BUNDLE_FROZEN=true BUNDLE_VERSION=system
-      ${ruby}/bin/ruby ${./plan.rb} ${lib.escapeShellArg (toString src)} ${lib.escapeShellArg memberPath} > plan.json
-    '';
-    expression = ''
-      let pkgs = import ${nixpkgsSource} { system = "${pkgs.stdenv.hostPlatform.system}"; };
-      in import ${./build.nix} pkgs {
-        src = builtins.storePath "${src}";
-        plan = builtins.fromJSON (builtins.readFile ./plan.json);
-        gemInputs = ${json gemInputs};
-        gemFlags = ${json gemFlags};
-      }
-    '';
+  system = pkgs.stdenv.hostPlatform.system;
+  script = ./drvrb.rb;
+  gemInputsSpec = lib.mapAttrs (_: names: map (n: {
+    drv = builtins.unsafeDiscardOutputDependency pkgs.${n}.drvPath;
+    out = builtins.unsafeDiscardStringContext (toString pkgs.${n});
+  }) names) gemInputs;
+
+  stage1 = builtins.derivation {
+    name = "drvrb-gems.drv.drv";
+    inherit system;
+    builder = "${ruby}/bin/ruby";
+    args = [ script "stage1" ];
+    SRC = "${src}";
+    MEMBER_PATH = memberPath;
+    RUBY = "${ruby}";
+    SCRIPT = "${script}";
+    SYSTEM = system;
+    STDENV_DRV = builtins.unsafeDiscardOutputDependency pkgs.stdenv.drvPath;
+    STDENV_OUT = builtins.unsafeDiscardStringContext (toString pkgs.stdenv);
+    PKG_CONFIG_DRV = builtins.unsafeDiscardOutputDependency pkgs.pkg-config.drvPath;
+    PKG_CONFIG_OUT = builtins.unsafeDiscardStringContext (toString pkgs.pkg-config);
+    GIT_DRV = builtins.unsafeDiscardOutputDependency pkgs.gitMinimal.drvPath;
+    GIT_OUT = builtins.unsafeDiscardStringContext (toString pkgs.gitMinimal);
+    BASH_DRV = builtins.unsafeDiscardOutputDependency pkgs.bash.drvPath;
+    BASH_OUT = builtins.unsafeDiscardStringContext (toString pkgs.bash);
+    GEM_INPUTS_JSON = builtins.toJSON gemInputsSpec;
+    GEM_FLAGS_JSON = builtins.toJSON gemFlags;
+    requiredSystemFeatures = [ "recursive-nix" ];
+    __contentAddressed = true;
+    outputHashMode = "text";
+    outputHashAlgo = "sha256";
   };
-  common = { __contentAddressed = true; passthru.planner = environment.planner; };
-in if test then pkgs.runCommand "drvrb-test" common ''
-  source ${environment}
-  export HOME="$TMPDIR"
-  if [[ -n "$extensions" ]]; then export RUBYLIB="$extensions"; fi
-  cp -R ${src} workspace
-  chmod -R u+w workspace
-  export BUNDLE_GEMFILE="$PWD/workspace$rootSuffix/Gemfile"
-  export PATH="$GEM_HOME/bin:${ruby}/bin:$PATH"
-  cd "workspace$memberSuffix"
-  "$bundle" check
-  ${if testCommand == null then ''
-    "$bundle" exec ${ruby}/bin/ruby ${./run-tests.rb} ${lib.escapeShellArgs testArgs}
-  '' else ''
-    "$bundle" exec ${lib.escapeShellArgs (testCommand ++ testArgs)}
-  ''}
-  mkdir "$out"
-'' else pkgs.runCommand "drvrb-package" (common // { nativeBuildInputs = [ pkgs.makeWrapper ]; }) ''
-  source ${environment}
-  mkdir -p "$out/bin" "$out/nix-support"
-  for dir in gems specifications extensions cache plugins build_info; do
-    if [[ -e "$GEM_HOME/$dir" ]]; then ln -s "$GEM_HOME/$dir" "$out/$dir"; else mkdir "$out/$dir"; fi
-  done
-  ln -s "$manifest" "$out/nix-support/gem-paths.json"
-  settings=(--set GEM_HOME "$GEM_HOME" --set GEM_PATH "$GEM_PATH" --set BUNDLE_GEMFILE "${src}$rootSuffix/Gemfile"
-    --set BUNDLE_IGNORE_CONFIG 1 --set BUNDLE_FROZEN true --set BUNDLE_VERSION "$BUNDLE_VERSION"
-    --prefix PATH : "${ruby}/bin:$GEM_HOME/bin")
-  if [[ -n "$extensions" ]]; then settings+=(--prefix RUBYLIB : "$extensions"); fi
-  makeWrapper "${ruby}/bin/ruby" "$out/bin/ruby" "''${settings[@]}" --add-flags '-rbundler/setup'
-  makeWrapper "${ruby}/bin/gem" "$out/bin/gem" "''${settings[@]}"
-  makeWrapper "$bundle" "$out/bin/bundle" "''${settings[@]}"
-  shopt -s nullglob
-  for entry in "$GEM_HOME"/bin/*; do
-    name=''${entry##*/}
-    [[ -e "$out/bin/$name" ]] || makeWrapper "$bundle" "$out/bin/$name" "''${settings[@]}" --add-flag exec --add-flag "$entry"
-  done
-  programs=()
-  for entry in "${src}$memberSuffix"/{exe,bin}/*; do
-    [[ -f "$entry" && -x "$entry" ]] || continue
-    name=''${entry##*/}
-    if [[ "$name" == bundle || "$name" == ruby || "$name" == gem ]]; then continue; fi
-    rm -f "$out/bin/$name"
-    makeWrapper "$bundle" "$out/bin/$name" "''${settings[@]}" --add-flag exec --add-flag "$entry"
-    programs+=("$name")
-  done
-  if [[ ''${#programs[@]} == 1 ]]; then
-    ln -s "../bin/''${programs[0]}" "$out/nix-support/drvrb-run"
-  else
-    ln -s ../bin/ruby "$out/nix-support/drvrb-run"
-  fi
-  "$out/bin/bundle" check
-''
+
+  stage2 = builtins.outputOf stage1.outPath "out";
+  environment = builtins.outputOf stage2 "out";
+
+  drv = builtins.derivation ({
+    name = if test then "drvrb-test" else "drvrb-package";
+    inherit system;
+    builder = "${ruby}/bin/ruby";
+    args = [ "--disable-gems" script (if test then "test" else "package") ];
+    SRC = "${src}";
+    ENV_DIR = environment;
+    __contentAddressed = true;
+    outputHashMode = "recursive";
+    outputHashAlgo = "sha256";
+  } // lib.optionalAttrs test {
+    RUN_TESTS_SCRIPT = "${./run-tests.rb}";
+    TEST_COMMAND_JSON = builtins.toJSON testCommand;
+    TEST_ARGS_JSON = builtins.toJSON testArgs;
+  });
+in drv // { passthru = { planner = stage1; }; }

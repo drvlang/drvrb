@@ -6,13 +6,13 @@
     inherit self nixpkgs;
     toolSource = {
       root = ./.;
-      files = [ ./build.nix ./package.nix ./plan.rb ./run-tests.rb ];
+      files = [ ./drvrb.rb ./package.nix ./run-tests.rb ];
       benchmarkFiles = [ ./benchmarks/default.nix ];
     };
     name = "drvrb";
     systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
-    mkPackage = import ./package.nix { inherit drvkit nixpkgs; };
-    mkTest = import ./package.nix { inherit drvkit nixpkgs; test = true; };
+    mkPackage = import ./package.nix {};
+    mkTest = import ./package.nix { test = true; };
     selectTarget = { src, target, ... }: { inherit src; memberPath = target; };
     mkApp = pkgs: args: pkg:
       let program = args.program or null;
